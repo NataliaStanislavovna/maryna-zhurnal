@@ -248,9 +248,40 @@ const render = {
     return '<div class="card">' + rows.join('') + '</div>';
   },
   activities(a) {
-    const rows = a.map(x => '<div class="lesson"><div class="d"><b>' + esc(x.creator_name || '') + '</b><div class="t">' +
-      esc(x.event_date || x.date || '') + (x.absence_type ? ' · ' + esc(x.absence_type) : '') + '</div></div></div>');
-    return '<div class="card">' + rows.join('') + '</div>';
+    const notices = [], absences = {};
+    for (const x of a) for (const ev of (x.activity || [])) {
+      const code = ev.code || '';
+      if (code === 'ABSENCE_NOTICE_ADDED') notices.push(ev);
+      else if (code === 'ABSENCE_ADDED') {
+        const d = ev.event_date;
+        (absences[d] = absences[d] || []).push(ev.discipline_name || '?');
+      }
+    }
+    notices.sort((p,q)=>String(q.creation_date).localeCompare(String(p.creation_date)));
+    let html = '';
+    if (notices.length) {
+      html += '<div class="dayinfo"><b>Записки об отсутствии</b> (документы, покрывающие дни)</div><div class="card">' +
+        notices.map(n => {
+          const rng = String(n.event_date||'').split(' - ');
+          const d = rng[0] === rng[1] ? rng[0] : rng[0] + ' — ' + rng[1];
+          return '<div class="lesson"><div class="d"><b>Записка · ' + esc(d) + '</b>' +
+            '<div class="t">' + esc(n.absence_type === 'Parent notice' ? 'от родителя' : esc(n.absence_type)) +
+            (n.illness_yn ? ' · по болезни' : '') +
+            (n.creator_name ? ' · оформила ' + esc(n.creator_name) : '') + '</div></div></div>';
+        }).join('') + '</div>';
+    }
+    const dates = Object.keys(absences).sort().reverse();
+    if (dates.length) {
+      html += '<div class="dayinfo" style="margin-top:14px"><b>Отсутствия по урокам</b> (отмечено школой)</div>';
+      for (const d of dates) {
+        const cnt = {};
+        for (const s of absences[d]) cnt[s] = (cnt[s]||0)+1;
+        const subj = Object.keys(cnt).sort().map(s => esc(s) + (cnt[s]>1 ? ' ×' + cnt[s] : '')).join(', ');
+        html += '<div class="card"><div class="lesson"><div class="d"><b>' + esc(d) + '</b><div class="t">' + subj + '</div></div>' +
+          '<div><span class="badge" style="background:#c0392b">не была</span></div></div></div>';
+      }
+    }
+    return html || '<div class="card muted">Записок и отсутствий нет</div>';
   }
 };
 document.getElementById('pass').addEventListener('keydown', e => { if (e.key === 'Enter') decrypt(); });
