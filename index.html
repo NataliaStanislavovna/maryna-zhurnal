@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Журнал Maryna</title>
+<style>
+:root { --blue:#1a56a0; --bg:#f7f9fc; --card:#fff; --ok:#2e7d32; --warn:#f9a825; }
+* { box-sizing:border-box; }
+body { font-family:Georgia,'Times New Roman',serif; background:var(--bg); color:#222; margin:0; padding:0 0 60px; }
+header { background:var(--blue); color:#fff; padding:16px 20px; position:sticky; top:0; z-index:10; box-shadow:0 2px 8px rgba(0,0,0,.25); }
+header h1 { margin:0; font-size:1.25em; } header .sub { font-size:.78em; opacity:.85; margin-top:3px; font-family:Arial; }
+main { max-width:860px; margin:18px auto; padding:0 12px; }
+.card { background:var(--card); border-radius:10px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); padding:12px 14px; }
+.date-h { font-family:Arial; font-weight:bold; color:#1a3a63; margin:14px 0 6px; font-size:.95em; }
+.lesson { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid #eef1f6; font-size:.95em; }
+.lesson:last-child { border-bottom:none; }
+.lesson .no { background:var(--blue); color:#fff; border-radius:50%; min-width:26px; height:26px; display:flex; align-items:center; justify-content:center; font-family:Arial; font-size:.8em; font-weight:bold; flex-shrink:0; margin-top:2px; }
+.lesson .d { flex:1; } .lesson .d b { display:block; }
+.lesson .t { font-family:Arial; font-size:.78em; color:#666; }
+.lesson .theme { color:#333; font-size:.9em; }
+.tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; font-family:Arial; }
+.tabs button { border:1px solid var(--blue); background:#fff; color:var(--blue); padding:7px 14px; border-radius:16px; font-size:.85em; cursor:pointer; }
+.tabs button.active { background:var(--blue); color:#fff; }
+#lock { max-width:420px; margin:60px auto; text-align:center; }
+#lock input { width:100%; padding:12px; font-size:1.05em; border:1px solid #c9d4e2; border-radius:8px; margin:10px 0; }
+#lock button { background:var(--blue); border:none; color:#fff; padding:12px 26px; border-radius:24px; font-size:1em; cursor:pointer; }
+#err { color:#c0392b; font-family:Arial; font-size:.85em; min-height:1.2em; }
+.note { font-size:.85em; color:#555; font-family:Arial; }
+.badge { font-family:Arial; font-size:.7em; padding:2px 8px; border-radius:10px; color:#fff; background:#888; }
+.badge.gr { background:var(--ok); } .badge.abs { background:#c0392b; } .badge.late { background:var(--warn); }
+.muted { color:#999; }
+#meta { text-align:right; }
+</style>
+</head>
+<body>
+<header><h1>Журнал · Maryna</h1><div class="sub" id="sub">личный электронный журнал</div></header>
+
+<div id="lock">
+  <div class="card">
+    <p>Введите парольную фразу:</p>
+    <input type="password" id="pass" autocomplete="current-password">
+    <br><button onclick="decrypt()">Открыть журнал</button>
+    <p id="err"></p>
+    <p class="note">Данные зашифрованы (AES-256-GCM). Без фразы сайт показывает только эту страницу.</p>
+  </div>
+</div>
+
+<main id="app" style="display:none">
+  <div class="tabs" id="tabs"></div>
+  <div id="content"></div>
+  <p class="note" style="text-align:center;margin-top:20px" id="syncinfo"></p>
+</main>
+
+<script>
+let J = null;
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+async function decrypt() {
+  const pass = document.getElementById('pass').value;
+  const err = document.getElementById('err');
+  err.textContent = '';
+  try {
+    const buf = await (await fetch('data.enc')).arrayBuffer();
+    const salt = new Uint8Array(buf, 0, 16), iv = new Uint8Array(buf, 16, 12), ct = new Uint8Array(buf, 28);
+    const keyMat = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      {name:'PBKDF2', salt, iterations:100000, hash:'SHA-256'}, keyMat,
+      {name:'AES-GCM', length:256}, false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+    J = JSON.parse(new TextDecoder().decode(pt));
+    document.getElementById('lock').style.display = 'none';
+    document.getElementById('app').style.display = '';
+    document.getElementById('sub').textContent =
+      J.journal.meta.school + ' · класс ' + J.journal.meta.class_name;
+    document.getElementById('syncinfo').textContent =
+      'Синхронизировано: ' + J.generated_at + (J.journal.meta.plus_active ? '' : ' · оценки и задания появятся после Mykoob Plus');
+    buildTabs();
+  } catch (e) { err.textContent = 'Неверная фраза или повреждены данные'; }
+}
+
+const SECTIONS = [['lessons','Расписание'],['grades','Оценки'],['assignments','Задания'],['attendance','Посещаемость'],['activities','Записки']];
+function buildTabs() {
+  const t = document.getElementById('tabs'); t.innerHTML = '';
+  for (const [k, name] of SECTIONS) {
+    const b = document.createElement('button');
+    b.textContent = name + (J.journal[k].length ? ' (' + J.journal[k].length + ')' : '');
+    b.onclick = () => show(k, b);
+    t.appendChild(b);
+  }
+  show('lessons', t.firstChild);
+}
+function show(k, btn) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const c = document.getElementById('content');
+  const arr = J.journal[k];
+  if (!arr.length) {
+    c.innerHTML = '<div class="card muted">Пока пусто' +
+      ((k==='grades'||k==='assignments') && !J.journal.meta.plus_active ? ' — этот раздел откроется после подключения Mykoob Plus' : '') + '</div>';
+    return;
+  }
+  c.innerHTML = render[k](arr);
+}
+const render = {
+  lessons(a) {
+    const byDate = {};
+    for (const day of a) for (const l of (day.lessons||[])) {
+      (byDate[day.date] = byDate[day.date] || []).push(l);
+    }
+    const dates = Object.keys(byDate).sort().reverse();
+    return dates.map(d => {
+      const ls = byDate[d].sort((x,y)=>x.lesson_number-y.lesson_number).map(l =>
+        '<div class="lesson"><div class="no">' + l.lesson_number + '</div><div class="d"><b>' + esc(l.discipline) + '</b>' +
+        (l.theme ? '<div class="theme">' + esc(l.theme) + '</div>' : '') +
+        '<div class="t">' + esc(l.time_from) + '–' + esc(l.time_to) +
+        (l.classroom ? ' · ' + esc(l.classroom) : '') + (l.teacher ? ' · ' + esc(l.teacher) : '') + '</div></div></div>'
+      ).join('');
+      return '<div class="date-h">' + d + '</div><div class="card">' + ls + '</div>';
+    }).join('');
+  },
+  grades(a) {
+    return '<div class="card"><pre style="white-space:pre-wrap;font-size:.85em">' + esc(JSON.stringify(a, null, 1)) + '</pre></div>';
+  },
+  assignments(a) {
+    return '<div class="card"><pre style="white-space:pre-wrap;font-size:.85em">' + esc(JSON.stringify(a, null, 1)) + '</pre></div>';
+  },
+  attendance(a) {
+    const rows = [];
+    for (const d of a) for (const l of (d.lesson||[])) {
+      let badge = '<span class="badge">тип ' + l.attendance_type + '</span>';
+      if (l.attendance_type === 1) badge = '<span class="badge gr">была</span>';
+      rows.push('<div class="lesson"><div class="d"><b>' + esc(l.subject) + '</b>' +
+        '<div class="t">' + esc(d.date) + '</div></div><div>' + badge + '</div></div>');
+    }
+    return '<div class="card">' + rows.join('') + '</div>';
+  },
+  activities(a) {
+    const rows = a.map(x => '<div class="lesson"><div class="d"><b>' +
+      esc(x.creator_name || '') + '</b><div class="t">' + esc(x.event_date || x.date || '') +
+      (x.absence_type ? ' · ' + esc(x.absence_type) : '') + '</div></div></div>');
+    return '<div class="card">' + rows.join('') + '</div>';
+  }
+};
+document.getElementById('pass').addEventListener('keydown', e => { if (e.key === 'Enter') decrypt(); });
+</script>
+</body>
+</html>
