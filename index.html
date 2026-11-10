@@ -220,6 +220,25 @@ function renderTab(k, btn) {
     : '<div class="card"><pre style="white-space:pre-wrap;font-size:.85em">' + esc(JSON.stringify(arr, null, 1)) + '</pre></div>';
 }
 const render = {
+  grades(a) {
+    const rows = a.slice().sort((x,y)=>String(y.date).localeCompare(String(x.date))).map(g => {
+      const v = String(g.value==null?'':g.value);
+      const cls = v.includes('%') ? 'badge' : 'badge gr';
+      return '<div class="lesson"><div class="d"><b>' + esc(g.subject) +
+        (g.kind ? ' <span class="t">· ' + esc(g.kind) + '</span>' : '') + '</b>' +
+        '<div class="t">' + esc(g.date) + (g.teacher ? ' · ' + esc(g.teacher) : '') + '</div></div>' +
+        '<div><span class="' + cls + '" style="font-size:1em;padding:5px 12px">' + esc(v) + '</span></div></div>';
+    });
+    return '<div class="card">' + (rows.length ? rows.join('') : '<p class="muted">пусто</p>') + '</div>';
+  },
+  assignments(a) {
+    const rows = a.slice().sort((x,y)=>String(y.date).localeCompare(String(x.date))).map(t =>
+      '<div class="lesson"><div class="d"><b>' + esc(t.subject) +
+        (t.kind ? ' <span class="t">· ' + esc(t.kind) + '</span>' : '') + '</b>' +
+        '<div class="t">на ' + esc(t.date) + '</div>' +
+        '<div class="theme" style="white-space:pre-wrap;margin-top:4px">' + esc(t.text) + '</div></div></div>');
+    return '<div class="card">' + (rows.length ? rows.join('') : '<p class="muted">пусто</p>') + '</div>';
+  },
   attendance(a) {
     const rows = [];
     for (const d of a) for (const l of (d.lesson||[])) {
