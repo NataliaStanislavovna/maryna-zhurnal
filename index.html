@@ -210,6 +210,12 @@ function renderTab(k, btn) {
       (subMode==='day' ? renderSchedule() : renderWeekGrid());
     return;
   }
+  if (k === 'grades') {
+    c.innerHTML = '<div class="subtabs"><button class="' + (gradesMode==='list'?'active':'') + '" onclick="gradesMode=\'list\';renderTab(\'grades\')">Списком</button>' +
+      '<button class="' + (gradesMode==='cal'?'active':'') + '" onclick="gradesMode=\'cal\';renderTab(\'grades\')">Календарь</button></div>' +
+      (gradesMode==='list' ? render.grades(J.journal.grades) : renderGradesCalendar());
+    return;
+  }
   const arr = J.journal[k];
   if (!arr.length) {
     c.innerHTML = '<div class="card muted">Пока пусто' +
@@ -219,6 +225,56 @@ function renderTab(k, btn) {
   c.innerHTML = render[k] ? render[k](arr)
     : '<div class="card"><pre style="white-space:pre-wrap;font-size:.85em">' + esc(JSON.stringify(arr, null, 1)) + '</pre></div>';
 }
+/* ==== календарь оценок ==== */
+let gradesMode = 'list', calY = null, calM = null;
+const MON = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+function gradesByDate() {
+  const m = {};
+  for (const g of J.journal.grades) (m[g.date] = m[g.date] || []).push(g);
+  return m;
+}
+function renderGradesCalendar() {
+  const byDate = gradesByDate();
+  const now = new Date();
+  if (calY === null) { calY = now.getFullYear(); calM = now.getMonth(); }
+  const first = new Date(calY, calM, 1);
+  const daysInMonth = new Date(calY, calM+1, 0).getDate();
+  const startCol = (first.getDay()+6)%7;
+  let grid = '<div class="weekhead"><button onclick="calShift(-1)">‹ месяц</button><b>' + MON[calM] + ' ' + calY +
+    '</b><button onclick="calShift(1)">месяц ›</button></div>';
+  grid += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;font-family:Arial">' +
+    ['пн','вт','ср','чт','пт','сб','вс'].map(w=>'<div class="note" style="text-align:center">'+w+'</div>').join('');
+  const todayIso = iso(now);
+  for (let i=0;i<startCol;i++) grid += '<div></div>';
+  for (let d=1; d<=daysInMonth; d++) {
+    const diso = calY + '-' + String(calM+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    const gs = byDate[diso] || [];
+    const isToday = diso === todayIso;
+    grid += '<div style="min-height:56px;border:1px solid ' + (isToday?'var(--blue)':'#e3e9f2') + ';border-radius:8px;padding:3px 4px;' + (gs.length?'background:#fdfefe':'') + '">' +
+      '<div class="note" style="font-size:.7em;text-align:right;' + (isToday?'color:var(--blue);font-weight:bold':'color:#999') + '">' + d + '</div>' +
+      gs.map(g => {
+        const v = String(g.value==null?'':g.value);
+        const bg = v.includes('%') ? '#5b7fa6' : '#2e7d32';
+        return '<div title="' + esc(g.subject) + (g.kind?' · '+esc(g.kind):'') + '" style="background:' + bg + ';color:#fff;border-radius:8px;font-size:.72em;text-align:center;margin-top:2px;padding:1px 0;cursor:help">' + esc(v) + '</div>';
+      }).join('') + '</div>';
+  }
+  grid += '</div>';
+  // сводка месяца: средние по предметам
+  const monthGrades = J.journal.grades.filter(g => g.date && g.date.startsWith(calY + '-' + String(calM+1).padStart(2,'0')));
+  let summary = '';
+  if (monthGrades.length) {
+    const bySubj = {};
+    for (const g of monthGrades) (bySubj[g.subject] = bySubj[g.subject] || []).push(g);
+    summary = '<div class="dayinfo" style="margin-top:12px"><b>За месяц:</b></div><div class="card">' +
+      Object.keys(bySubj).sort().map(s => {
+        const vals = bySubj[s].map(g=>String(g.value));
+        return '<div class="lesson"><div class="d"><b>' + esc(s) + '</b></div><div>' + vals.map(v=>'<span class="badge '+(v.includes('%')?'':'gr')+'" style="margin-left:3px">'+esc(v)+'</span>').join('') + '</div></div>';
+      }).join('') + '</div>';
+  }
+  const hint = '<p class="note" style="margin-top:8px">Цвет: зелёный — отметка (1–10), синий — проценты. Наведите на оценку — предмет и тип работы.</p>';
+  return grid + summary + hint;
+}
+function calShift(n){ calM += n; if (calM < 0) { calM = 11; calY--; } if (calM > 11) { calM = 0; calY++; } renderTab('grades'); }
 const render = {
   grades(a) {
     const rows = a.slice().sort((x,y)=>String(y.date).localeCompare(String(x.date))).map(g => {
