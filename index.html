@@ -240,12 +240,18 @@ const render = {
     return '<div class="card">' + (rows.length ? rows.join('') : '<p class="muted">пусто</p>') + '</div>';
   },
   attendance(a) {
+    // поток user_attendance содержит ТОЛЬКО пропуски/исключения (не «присутствия»)
+    // типы Mykoob: 1 = N (Neieradās, отсутствовала); прочие показываем как есть с кодом
     const rows = [];
     for (const d of a) for (const l of (d.lesson||[])) {
-      const badge = l.attendance_type === 1 ? '<span class="badge gr">была</span>' : '<span class="badge">тип ' + l.attendance_type + '</span>';
+      const t = l.attendance_type;
+      const badge = t === 1
+        ? '<span class="badge" style="background:#c0392b">N · отсутствовала</span>'
+        : '<span class="badge" style="background:#f9a825">код ' + esc(t) + '</span>';
       rows.push('<div class="lesson"><div class="d"><b>' + esc(l.subject) + '</b><div class="t">' + esc(d.date) + '</div></div><div>' + badge + '</div></div>');
     }
-    return '<div class="card">' + rows.join('') + '</div>';
+    return '<p class="note" style="margin:0 0 8px">N = Neieradās (отсутствовала). Здесь фиксируются только пропуски — зелёных «была» в журнале Mykoob не существует.</p>' +
+      '<div class="card">' + rows.join('') + '</div>';
   },
   activities(a) {
     const notices = [], absences = {};
